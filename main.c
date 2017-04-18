@@ -1,16 +1,19 @@
-#include <ctype.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/wait.h>
-#include <fcntl.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <stddef.h>
+#include <locale.h>
+#include <ctype.h>
 volatile int flag_back=0;
-
-void handler(int signum)
-{
-
-}
+volatile int flag_forward=0;
+volatile char forwarding[20];
 int cd(char **args)
 {
     if(args[1]==NULL)
@@ -44,12 +47,23 @@ char** SepLine(char *line)
 	token = strtok(line, " \n");
 	while(token!=NULL)
 	{
-		tokens[position] = token;
-		position++;
-		if(position >= bufforSize)
-		{
-			bufforSize += 64;
-			tokens = realloc(tokens, bufforSize * sizeof(char*));
+        if(flag_forward==1)
+        {
+            strcpy(forwarding,token);
+        }
+        else if(strcmp(token,">>")==0)
+        {
+            flag_forward=1;
+        }
+        else
+        {
+            tokens[position] = token;
+            position++;
+            if(position >= bufforSize)
+            {
+                bufforSize += 64;
+                tokens = realloc(tokens, bufforSize * sizeof(char*));
+            }
 		}
 		token = strtok(NULL," \n");
 
@@ -71,11 +85,18 @@ int launch(char** args)
 	pid=fork();
 	if(pid==0)
 	{
+        if(flag_forward==1)
+        {
+            int out = open(forwarding, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+            dup2(out, 1);
+            close(out);
+        }
 		if(execvp(args[0],args)==-1)
 		{
 			perror("Brak podanego programu!!!");
 		}
-	exit(EXIT_FAILURE);
+		//printf("asdasdasd");
+        exit(EXIT_FAILURE);
 	}
 	else
 	{
@@ -142,10 +163,24 @@ void saveHistory(char *arg, char *cmd)
     }
 
 }
+void catch_stop ();
+void handler(int signa)
+{
 
+    char c[1];
+    int r=open("h.txt",O_RDONLY);
+    if(r != -1)
+    {
+        while(read(r, c, 1))
+        {
+            fprintf(stderr ,"%c", c[0]);
+        }
+    }
+}
 int main (int argc, char* argv[])
 {
     int a;
+    signal(SIGQUIT, handler);
 	while(1)
 	{
 		char *line=readArguments();
@@ -165,8 +200,10 @@ int main (int argc, char* argv[])
 		{
             flag_back=0;
 		}
+		if(flag_forward==1)
+		{
+            flag_forward=0;
+		}
     }
-
-
-return 0;
+    return 0;
 }
