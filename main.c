@@ -13,6 +13,7 @@
 #include <ctype.h>
 volatile int flag_back=0;
 volatile int flag_forward=0;
+volatile int script_flag =0;
 volatile char forwarding[20];
 int cd(char **args)
 {
@@ -176,25 +177,101 @@ void handler(int signa)
             fprintf(stderr ,"%c", c[0]);
         }
     }
+    fprintf(stderr,"shell->> ");
+}
+void scripts(char *file)
+{
+    int c;
+    FILE *fp;
+    fp=fopen(file,"r");
+    int bufforSize=64;
+    /*char** lines = malloc(bufforSize * sizeof(char*));
+    int i=0;
+    int j=0;
+    int k=0;*/
+    char * line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    /*while(1)
+    {
+        c = fgetc(fp);
+        if( feof(fp) )
+        {
+            break;
+        }
+        lines[i]=(char)c;
+        //fprintf(stderr,"%c",lines[i]);
+        if(lines[i]=='\n')
+        {
+            if(j>0 && i>0)
+            {
+                char**args=SepLine(lines);
+                fprintf(stderr,"%s", args[0]);
+                int a=launch(args);
+            break;
+            }
+            j++;
+            i=0;
+            for(k=0; k<bufforSize; k++) lines[i]=0;
+        }
+        i++;
+
+
+    }
+    fclose(fp);*/
+    if (fp == NULL)
+        exit(EXIT_FAILURE);
+    int j=0;
+    while ((read = getline(&line, &len, fp)) != -1) {
+       if(j>0 && read>0)
+       {
+            line[read-2]='\n';
+            line[read-1]=0;
+            char **args=SepLine(line);
+            int a = launch(args);
+       }
+        j++;
+    }
+
+    if (line)
+        free(line);
+
+    fclose(fp);
 }
 int main (int argc, char* argv[])
 {
     int a;
-    signal(SIGQUIT, handler);
+    int i;
+    fprintf(stderr,"shell->> ");
+    int bufSize=64;
+    if(argc==2)script_flag=1;
 	while(1)
 	{
-		char *line=readArguments();
-		char **args=SepLine(line);
 
+        signal(SIGQUIT, handler);
+        int j=0;
+        int k=0;
+
+        if(script_flag==1)
+        {
+             scripts(argv[1]);
+             fprintf(stderr,"shell->> ");
+             script_flag=0;
+        }
+        char *line=readArguments();
+        char** args=SepLine(line);
 		if(strcmp(args[0],"cd")==0)
 		{
             saveHistory("h.txt", args[0]);
             cd(args);
+            fprintf(stderr,"shell->> ");
 		}
 		else
 		{
 		    saveHistory("h.txt", args[0]);
             a = launch(args);
+            fprintf(stderr,"shell->> ");
 		}
         if(flag_back==1)
 		{
