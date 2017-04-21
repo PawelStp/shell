@@ -15,6 +15,11 @@ volatile int flag_back=0;
 volatile int flag_forward=0;
 volatile int script_flag =0;
 volatile char forwarding[20];
+typedef struct PIPE{
+    char *line;
+    char **args;
+};
+volatile int counterPipes=0;
 int cd(char **args)
 {
     if(args[1]==NULL)
@@ -39,6 +44,34 @@ char* readArguments()
 	getline(&line, &bufforSize, stdin);
 	return line;
 }
+
+struct PIPE* SepPipes(char *line)
+{
+    counterPipes=0;
+    int bufforSize=64;
+    int position=0;
+    struct PIPE* tokens= malloc(bufforSize * sizeof(struct PIPE));
+    struct PIPE token;
+    token.line = strtok(line,"|\n");
+    while(token.line!=NULL)
+	{
+
+            tokens[position] = token;
+            position++;
+            counterPipes++;
+            if(position >= bufforSize)
+            {
+
+                bufforSize += 64;
+                tokens = realloc(tokens, bufforSize * sizeof(struct PIPE));
+            }
+
+		token.line = strtok(NULL,"|\n");
+
+	}
+	return tokens;
+}
+
 char** SepLine(char *line)
 {
 	int bufforSize = 64, position = 0;
@@ -79,42 +112,6 @@ char** SepLine(char *line)
 	return tokens;
 
 }
-int launch(char** args)
-{
-	pid_t pid, wpid;
-	int status;
-	pid=fork();
-	if(pid==0)
-	{
-        if(flag_forward==1)
-        {
-            int out = open(forwarding, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-            dup2(out, 1);
-            close(out);
-        }
-		if(execvp(args[0],args)==-1)
-		{
-			perror("Brak podanego programu!!!");
-		}
-		//printf("asdasdasd");
-        exit(EXIT_FAILURE);
-	}
-	else
-	{
-		if(pid<0)
-		{
-			perror("Brak podanego programu!!!");
-		}
-		else if(flag_back == 0)
-		{
-			do
-			{
-				wpid=waitpid(pid,&status,WUNTRACED);
-			}while(!WIFEXITED(status) && !WIFSIGNALED(status));
-		}
-	}
-}
-
 void saveHistory(char *arg, char *cmd)
 {
     int r=open(arg,O_RDONLY);
@@ -164,7 +161,6 @@ void saveHistory(char *arg, char *cmd)
     }
 
 }
-void catch_stop ();
 void handler(int signa)
 {
 
@@ -185,41 +181,9 @@ void scripts(char *file)
     FILE *fp;
     fp=fopen(file,"r");
     int bufforSize=64;
-    /*char** lines = malloc(bufforSize * sizeof(char*));
-    int i=0;
-    int j=0;
-    int k=0;*/
     char * line = NULL;
     size_t len = 0;
     ssize_t read;
-
-    /*while(1)
-    {
-        c = fgetc(fp);
-        if( feof(fp) )
-        {
-            break;
-        }
-        lines[i]=(char)c;
-        //fprintf(stderr,"%c",lines[i]);
-        if(lines[i]=='\n')
-        {
-            if(j>0 && i>0)
-            {
-                char**args=SepLine(lines);
-                fprintf(stderr,"%s", args[0]);
-                int a=launch(args);
-            break;
-            }
-            j++;
-            i=0;
-            for(k=0; k<bufforSize; k++) lines[i]=0;
-        }
-        i++;
-
-
-    }
-    fclose(fp);*/
     if (fp == NULL)
         exit(EXIT_FAILURE);
     int j=0;
@@ -238,6 +202,70 @@ void scripts(char *file)
         free(line);
 
     fclose(fp);
+}
+int launch(struct PIPE* pipes)
+{
+    pid_t wpid;
+    int status;
+	int tmpIn=dup(0);
+	int tmpOut=dup(1);
+	int fdin;
+    fdin=dup(tmpIn);
+	pid_t ret;
+	int fdOut;
+	int i;
+	for(i=0;i<counterPipes;i++)
+	{
+        dup2(fdin,0);
+        close(fdin);
+        if(i==counterPipes-1)
+        {
+            if(flag_forward==1)
+            {
+                fdOut=open(forwarding,O_WRONLY | O_CREAT | O_TRUNC, 0666);
+            }
+            else
+            {
+                fdOut=dup(tmpOut);
+            }
+        }
+        else
+        {
+            int fdPipe[2];
+            pipe(fdPipe);
+            fdOut=fdPipe[1];
+            fdin=fdPipe[0];
+        }
+        dup2(fdOut,1);
+        close(fdOut);
+        ret=fork();
+        if(ret==0)
+        {
+            if((execvp(pipes[i].args[0],pipes[i].args))==-1)
+            {
+                fprintf(stderr,"Brak podanego programu\n");
+            }
+
+        }else
+        {
+            if(ret<0)
+            {
+                perror("Wystapil blad!!!");
+            }
+        }
+    }
+	dup2(tmpIn,0);
+	dup2(tmpOut,1);
+	close(tmpIn);
+	close(tmpOut);
+    if(flag_back == 0 && ret > 0)
+		{
+			do
+			{
+				wpid=waitpid(ret,&status,WUNTRACED);
+			}while(!WIFEXITED(status) && !WIFSIGNALED(status));
+		}
+
 }
 int main (int argc, char* argv[])
 {
@@ -260,19 +288,28 @@ int main (int argc, char* argv[])
              script_flag=0;
         }
         char *line=readArguments();
-        char** args=SepLine(line);
-		if(strcmp(args[0],"cd")==0)
+        struct PIPE *pipe=SepPipes(line);
+        for(i=0;i<counterPipes;i++)
+        {
+            pipe[i].args=SepLine(pipe[i].line);
+        }
+        if(strcmp(pipe[0].args[0],"exit")==0)
+        {
+            exit(0);
+        }
+		if(strcmp(pipe[0].args[0],"cd")==0)
 		{
-            saveHistory("h.txt", args[0]);
-            cd(args);
+            saveHistory("h.txt", pipe[0].args[0]);
+            cd(pipe[0].args);
             fprintf(stderr,"shell->> ");
 		}
 		else
 		{
-		    saveHistory("h.txt", args[0]);
-            a = launch(args);
+		    saveHistory("h.txt", pipe[0].args[0]);
+            int a = launch(pipe);
             fprintf(stderr,"shell->> ");
 		}
+
         if(flag_back==1)
 		{
             flag_back=0;
