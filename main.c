@@ -178,6 +178,7 @@ void handler(int signa)
 void scripts(char *file)
 {
     int c;
+    int i;
     FILE *fp;
     fp=fopen(file,"r");
     int bufforSize=64;
@@ -191,10 +192,13 @@ void scripts(char *file)
        if(j>0 && read>0)
        {
             line[read-2]='\n';
-            line[read-1]=0;
-            char **args=SepLine(line);
-            int a = launch(args);
-       }
+            struct PIPE *pipe=SepPipes(line);
+            for(i=0;i<counterPipes;i++)
+            {
+                pipe[i].args=SepLine(pipe[i].line);
+            }
+            int a = launch(pipe);
+        }
         j++;
     }
 
@@ -205,6 +209,7 @@ void scripts(char *file)
 }
 int launch(struct PIPE* pipes)
 {
+    //printf("sadasd");
     pid_t wpid;
     int status;
 	int tmpIn=dup(0);
@@ -216,6 +221,7 @@ int launch(struct PIPE* pipes)
 	int i;
 	for(i=0;i<counterPipes;i++)
 	{
+       // printf("%s",pipes[i].args[0]);
         dup2(fdin,0);
         close(fdin);
         if(i==counterPipes-1)
@@ -241,6 +247,7 @@ int launch(struct PIPE* pipes)
         ret=fork();
         if(ret==0)
         {
+
             if((execvp(pipes[i].args[0],pipes[i].args))==-1)
             {
                 fprintf(stderr,"Brak podanego programu\n");
@@ -283,8 +290,8 @@ int main (int argc, char* argv[])
 
         if(script_flag==1)
         {
+            counterPipes=1;
              scripts(argv[1]);
-             fprintf(stderr,"shell->> ");
              script_flag=0;
         }
         char *line=readArguments();
