@@ -209,7 +209,6 @@ void scripts(char *file)
 }
 int launch(struct PIPE* pipes)
 {
-    //printf("sadasd");
     pid_t wpid;
     int status;
 	int tmpIn=dup(0);
@@ -221,7 +220,6 @@ int launch(struct PIPE* pipes)
 	int i;
 	for(i=0;i<counterPipes;i++)
 	{
-       // printf("%s",pipes[i].args[0]);
         dup2(fdin,0);
         close(fdin);
         if(i==counterPipes-1)
